@@ -12,6 +12,7 @@
 
 ---
 # Demo
+
 * **Start With Slides 1 - 4 then Skip to [Here](#Instruqt)**
 * I am going to Walk you through a demo on how to manage secrets while moving to the cloud.
 * HashiCup have been audited by regulators who determined that the HashiCups Store app has a poor secrets management.
