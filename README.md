@@ -13,6 +13,152 @@
 ---
 # Demo
 
+- Go direct to **Next**
+- I am going to Walk you through a demo on how to manage secrets while moving to the cloud.
+- Currently the site is using a password stored in a file
+
+```bash
+cat /share/postgres-product-creds.txt
+```
+
+- Lets move this password to Vault
+
+```bash
+vault kv put kv/db/postgres/product-db-creds \
+  username="postgres" \
+  password="password"
+```
+
+- Lets look at our vault secrets
+
+```bash
+vault secrets list
+
+vault kv list kv/db
+vault kv list kv/db/postgres
+
+vault read kv/db/postgres/product-db-creds
+```
+
+- Now we will leverage the Vault Agent Sidecar Injector for Kubernetes. The Vault Agent leverages the Kubernetes auth method to authenticate, and then injects secrets in a few ways
+    - The init container will prepopulate the shared memory volume with the requested secrets prior to the other containers starting.
+    - The sidecar container will continue to authenticate and render secrets to the same location as the pod runs. Using annotations, the initialization and sidecar containers may be disabled.
+    - At a minimum, every container in the pod will be configured to mount a shared memory volume.
+    - This volume is mounted to `/vault/secrets` and will be used by the Vault Agent containers for sharing secrets with the other containers in the pod.
+- If we take a look at `products-api.yaml` in our `k8s Dir` **Line 46-48**
+
+```bash
+kubectl get deploy
+
+# Lets Restart to pickup the changes
+kubectl rollout restart deployment products-api-deployment
+kubectl get deploy --watch
+
+# Lets see what it did
+kubectl exec -ti deployment/products-api-deployment -- cat /vault/secrets/db-creds
+
+# Now lets get rid of that file
+rm /share/postgres-product-creds.txt
+```
+
+- Check that the site works
+- **Next**
+- So far we have used root access for everything, lets solve this
+- Show Policies in `Policies Dir`
+
+```bash
+vault policy write dba-operator /root/policies/dba-operator-policy.hcl
+```
+
+- For humans to access Vault lets enable the Userpass auth method and create some users using our policy
+
+```bash
+vault auth enable userpass
+
+# And add a user
+vault write auth/userpass/users/dba-dan password=dba-dan policies=dba-operator
+
+# Now login with that new user
+unset VAULT_TOKEN
+vault login -method=userpass username=dba-dan password=dba-dan
+
+# Now test the user
+vault read kv/db/postgres/product-db-creds
+vault read kv/not-db/
+```
+
+- Now lets fix up that database password with dynamic secrets for Postgress
+
+```bash
+vault secrets enable database
+
+# Lets get the current password
+vault read kv/db/postgres/product-db-creds
+
+# To make things easier we'll set some VARS
+export PG_HOST=$(kubectl get svc -l app=postgres -o=json | jq -r '.items[0].spec.clusterIP')
+export PG_USER=postgres
+export PG_PASS=password
+
+# And configure the secrets engine
+vault write database/config/hashicups-pgsql \
+    plugin_name=postgresql-database-plugin \
+    allowed_roles="products-api" \
+    connection_url="postgresql://{{username}}:{{password}}@$PG_HOST:5432/?sslmode=disable" \
+    username=$PG_USER \
+    password=$PG_PASS
+
+# Now we have configired the role lets tell it how to create dynamic creds
+vault write database/roles/products-api \
+    db_name=hashicups-pgsql \
+    creation_statements="CREATE ROLE \"{{name}}\" WITH LOGIN PASSWORD '{{password}}' VALID UNTIL '{{expiration}}' SUPERUSER; \
+    GRANT SELECT ON ALL TABLES IN SCHEMA public TO \"{{name}}\";" \
+    default_ttl="30m" \
+    max_ttl="1h"
+
+# And use it
+vault read database/creds/products-api
+
+psql -U  -h $PG_HOST products
+
+# Now lets delete that old KV
+vault kv delete kv/db/postgres/product-db-creds
+```
+
+- Lets update our app to use the new dynamic creds
+
+```bash
+kubectl delete deployment products-api-deployment
+kubectl get deployment --watch
+```
+
+- ********Next********
+- Lets update our `products-api.yml` and we’ll **need a new policy**
+
+```bash
+sed -i 's/kv\/db\/postgres\/product-db-creds/database\/creds\/products-api/g' /root/k8s/products-api.yml
+sed -i 's/kv\/db\/postgres\/product-db-creds/database\/creds\/products-api/g' /root/policies/products-api-policy.hcl
+
+# Write the policy
+vault policy write products-api policies/products-api-policy.hcl
+```
+
+- Show `products-api.yml`
+- Now lets update the app
+
+```bash
+kubectl apply -f k8s/products-api.yml
+kubectl get deployment --watch
+
+# We can double check what the connection is
+kubectl exec -ti deployment/products-api-deployment -- cat /vault/secrets/db-creds
+```
+
+- Show that it works
+
+
+
+-----
 * **Start With Slides 1 - 4 then Skip to [Here](#Instruqt)**
 * I am going to Walk you through a demo on how to manage secrets while moving to the cloud.
 * HashiCup have been audited by regulators who determined that the HashiCups Store app has a poor secrets management.
