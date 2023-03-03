@@ -17,6 +17,61 @@
 cat /vault/vault1/root-token
 ```
 
+* Get Token
+```bash
+cat /vault/vault1/root-token
+```
+
+* Oh no! Somthing went wrong, lets debug this
+```bash
+docker container logs product-api
+```
+
+* We are using the Vault Agent to automatically authenticate to Vault and retrieve a dynamically generated Database Credential that is then inserted into the configuration file
+```bash
+vault agent -config=/vault/vault-agent/vault-agent-config.hcl
+```
+
+* Lets take a look at vaults logs
+```bash
+journalctl -u vault1 | grep error
+```
+
+* Vault isn't running because the KMS key needed to unseal Vault is gone.
+
+* Lets go back in time and setup replication
+```bash
+cat /vault/vault1/root-token
+cat /vault/vault2/root-token
+```
+* Enable KV Secrets Engine
+* Add a secret
+
+
+* Setup DR replication secondary token: `vault-east-dr`
+* **Create DR Operation Token***
+```bash
+vault token create -format=json -orphan -type=batch -policy=vault-dr-token | jq -r '.auth.client_token' | tee /vault/dr-batch-token
+```
+
+* Oh No! It went down, but this time we have a DR
+* Promote DR
+* Lets run the *vault agent again to retrieve another DB password
+* Show hashicups
+* Now lets restore West
+* Demote West to secondary
+* Get recovery keys that we stored when inisilising the cluster
+```bash
+cat /vault/vault1/initialization.txt
+```
+* Generate operation token
+* Add west as secondary of east
+
+## tokens
+s.5BTYtBye3fKfWm2OQYlqaSTf
+s.XjznTfZbegj0SJvUZl9I4VM5
+b.AAAAAQKAGkvVUNna1A3D93Bw7A3bA-nn9wT1cZKtdB7Pjce3yqxuGTkHM5M2oosyHukYSak2AUAi4LRE8noy2TwwTVHMqHl-zLW5Tp1D7UywwIfxxyb74HFVB0ka8oYwNBJmKQfvHcVSleqGFw
+s.DIuBULXnkEOczRdVHlVmreoH
 ---
 # Description 
 Welcome to HashiCups
